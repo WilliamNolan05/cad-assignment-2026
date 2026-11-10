@@ -12,6 +12,18 @@ export const handler = async (
   const body = parseJsonObject(event);
   if (isResponse(body)) return body;
 
+  const invalid = [
+    ...["movieId", "actorId"].filter(
+      (field) => !Number.isInteger(body[field]) || (body[field] as number) <= 0
+    ),
+    ...["roleName", "roleDescription"].filter(
+      (field) => typeof body[field] !== "string" || (body[field] as string).trim() === ""
+    ),
+  ];
+  if (invalid.length) {
+    return response(400, { message: `Missing or invalid fields: ${invalid.join(", ")}` });
+  }
+
   const role: Role = {
     movieId: body.movieId as number,
     actorId: body.actorId as number,
