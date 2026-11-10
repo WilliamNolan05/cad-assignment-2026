@@ -1,8 +1,10 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 import { TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
+import { TransactionCanceledException } from "@aws-sdk/client-dynamodb";
 import { actorKey, ddb, movieKey, type Role, tableName } from "../shared/db";
 import { isResponse, parseJsonObject, response } from "../shared/http";
 import { logRequest } from "../shared/request-logger";
+
 
 export const handler = async (
   event: APIGatewayProxyEvent
@@ -64,6 +66,23 @@ export const handler = async (
     );
     return response(201, { message: "Role added", data: role });
   } catch (err) {
+    if (err instanceof TransactionCanceledException) {
+      // CancellationReasons are in the same order as TransactItems.
+      const [movieMissing, actorMissing, roleExists] = (err.CancellationReasons ?? []).map(
+        (reason) => reason.Code === "ConditionalCheckFailed"
+      );
+      if (movieMissing) {
+        return response(404, { message: `Movie ${role.movieId} not found` });
+      }
+      if (actorMissing) {
+        return response(404, { message: `Actor ${role.actorId} not found` });
+      }
+      if (roleExists) {
+        return response(409, {
+          message: `Actor ${role.actorId} already has a role in movie ${role.movieId}`,
+        });
+      }
+    }
     console.error("DynamoDB error:", err);
     return response(500, {
       message: "Internal server error",
